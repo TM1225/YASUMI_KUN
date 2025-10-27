@@ -1,73 +1,198 @@
-Outlook CSV Scheduler
-=====================
+Outlook Shift Scheduler
+結論
 
-Overview
---------
-This tool loads a UTF-8 CSV file that describes Outlook appointments,
-displays the entries for review, and writes them to the default Outlook
-desktop calendar through the COM API. The UI is implemented with Tkinter
-and is intended to be distributed as a single EXE built with PyInstaller.
+目的: シフト表から「誰の」「どんな休み(有給/希望休)」かを判定し、Outlookデスクトップの既定カレンダーに**不在(Out of Office)**として一括登録するGUIツール。
 
-CSV Format
-----------
-Columns are fixed and the header row is mandatory.
+入力:
 
-    Date,Start,End,Subject,Status,Location,Body
+従来の CSV モード（固定カラム）,
 
-Example values:
+シフト表モード（Excel .xlsx、セル色で希望休を判定）。
 
-    2025-10-28,09:00,18:00,私用休暇,休み,,終日不在
-    2025-10-29,13:00,14:00,通院,外出,クリニック,定期検査
+配布: PyInstallerで単一EXE化して配布可能。
 
-Status Strings
---------------
-Status values are mapped to Outlook's BusyStatus numeric values.
+手順
 
-    休み / OOO / 不在 -> 3 (OutOfOffice)
-    外出 / 忙しい     -> 2 (Busy)
-    仮               -> 1 (Tentative)
-    在席 / 空き       -> 0 (Free)
-    他所勤務         -> 4 (WorkingElsewhere)
-    Other strings    -> 2 (Busy, default)
+起動
+EXEをダブルクリック（開発中は python main.py）。
 
-Usage (Developer Runtime)
--------------------------
-1. Ensure the host has:
-   - Windows with Outlook desktop installed and configured.
-   - Python 3.10+ and pywin32 (win32com).
-2. Install dependencies if needed:
+CSVモード
+「CSVを選択」→ プレビュー確認 → 「予定を登録」。
+CSVは Date,Start,End,Subject,Status,Location,Body ヘッダ必須（UTF-8）。
 
-       pip install pywin32
+シフト表モード
+「シフト表(xlsx)を選択」→ 対象年月(YYYY-MM)を確認/修正 → 対象メンバーを選択 → 「プレビュー生成」→ 「予定を登録」。
 
-3. Launch the app:
+セルが黄色なら「希望休」、黄色でない「休/有休」表記は「有給休暇」として登録。
 
-       python main.py
+1日につき1件、勤務時間帯を不在でブロック（既定は 09:00-18:00）。
 
-4. In the UI:
-   - Click "CSVを選択" and pick your schedule CSV.
-   - Review the preview grid.
-   - Click "予定を登録" to push the entries to Outlook.
-   - Monitor the log area for [OK] / [NG] per row.
+ログ確認
+画面下部のログで [OK]/[NG] を確認。完了時に成功/失敗件数を表示。
 
-Building a Standalone EXE
--------------------------
-1. Install PyInstaller:
+コマンド（開発者）
+# 依存関係
+pip install pywin32 openpyxl pyinstaller
 
-       pip install pyinstaller
+# 実行（開発時）
+python main.py
 
-2. Build the executable:
+# ビルド（配布用EXE）
+pyinstaller --onefile --windowed main.py --name outlook-shift-scheduler
 
-       pyinstaller --onefile --windowed main.py --name outlook-scheduler
+受入基準
 
-3. The generated EXE is located in the `dist` directory as
-   `outlook-scheduler.exe`. Distribute it together with
-   `schedule_template.csv` and this `README.txt`.
+CSVモード: CSV読込後、プレビューの各行がOutlookにそのまま登録される。Subject/Start/End/Location/Body/BusyStatus が一致。
 
-Notes
------
-- The app uses the system timezone. Provide local times in the CSV.
-- Outlook writes to the default calendar of the current profile.
-- Rows with invalid dates/times are skipped; processing continues for the
-  remaining rows.
-- The first launch of the PyInstaller onefile EXE may take longer because
-  the payload is extracted to a temporary directory.
+シフト表モード:
+
+対象メンバー一覧が抽出され、選択可能。
+
+プレビューにその人の休みだけが日付順で表示される。
+
+黄色セル→希望休, 非黄色の休/有休→有給休暇 として表示・登録される。
+
+登録後、Outlookで該当時間帯が BusyStatus=3(Out of Office) でブロックされている。
+
+失敗行があっても処理が継続し、最後に成功x件/失敗y件がログに出る。
+
+Outlook未設定やCOM障害時はエラーダイアログが出てボタンが復帰する。
+
+注意点
+
+カレンダーの書き込み先は「実行ユーザーの既定カレンダー」。他人の予定表に書くには権限と適切なプロファイルが必要。
+
+希望休の判定はセル背景の黄色に依存（.xlsx必須）。CSVにすると色情報は失われる。
+
+現行の勤務時間帯は固定(09:00-18:00)。変えるならコード内の SHIFT_DEFAULT_START/END を変更。
+
+重複登録チェックは未実装。同じ月を2回流すと二重に入ることがある。
+
+色の閾値は明るい黄を想定。超淡色・テーマ色次第で判定漏れがありえる。運用上「黄色はちゃんと黄色」を徹底推奨。
+
+AllDayEventは使わず時間帯ブロック運用。全日バナーは組織によっては邪魔になりがち。
+
+概要
+できること
+
+CSVからの一括投入（従来運用の継続）。
+
+月次シフト表(.xlsx) から対象者の休みのみ抽出し、有給/希望休を自動ラベリングして投入。
+
+GUIでプレビューし、ボタン1発でOutlook登録。処理ログつき。
+
+動作要件（クライアント）
+
+Windows
+
+Outlookデスクトップ版が普段どおり使える状態（既定プロファイル設定済み）
+
+配布EXE版はPython不要
+
+主要ライブラリ
+
+pywin32（Outlook COM）
+
+openpyxl（シフト表の読み込みとセル色取得）
+
+tkinter（標準GUI）
+
+入力仕様
+CSVモード
+
+ヘッダ必須:
+Date,Start,End,Subject,Status,Location,Body
+
+例:
+
+2025-10-28,09:00,18:00,私用休暇,休み,,終日不在
+2025-10-29,13:00,14:00,通院,外出,クリニック,定期検査
+
+
+Status は以下にマップ：
+
+休み/OOO/不在 → 3(OutOfOffice)
+
+外出/忙しい → 2(Busy)
+
+仮 → 1(Tentative)
+
+在席/空き → 0(Free)
+
+他所勤務 → 4(WorkingElsewhere)
+
+その他 → 2(Busy)
+
+シフト表モード（xlsx）
+
+行: メンバー名
+
+列: 日(1..31)
+
+セル値・色で判定
+
+値に「有給/ 有休」を含む → 有給休暇
+
+休み相当のセルが黄色 → 希望休
+
+休み相当のセルが非黄色 → 有給休暇（初期運用）
+
+年月はファイル名から推定（例: シフト2025年版(11月勤務).xlsx → 2025-11）。
+UIの「対象年月」で上書き可能。
+
+使い方（UIの流れ）
+CSVモード
+
+「CSVを選択」
+
+プレビュー確認
+
+「予定を登録」
+
+ログで結果確認
+
+シフト表モード
+
+「シフト表(xlsx)を選択」
+
+「対象年月(YYYY-MM)」を確認/修正
+
+「対象メンバー」を選択
+
+「プレビュー生成」
+
+「予定を登録」
+
+ログで結果確認
+
+よくある失敗と対処
+
+Outlook起動に失敗
+Outlook未設定/オフライン/COM壊れ。Outlookを手動起動してから再実行。
+
+日付/時間の書式エラー
+CSVの YYYY-MM-DD HH:MM 形式を確認。シフト表モードはUIの対象年月を確認。
+
+希望休が拾われない
+セルが本当に黄色か確認。テーマ色や淡すぎる黄は判定外になることがある。運用で黄色を統一。
+
+二重登録
+同じ範囲を再投入した。現行版は重複スキップなし。月単位で一度だけ流す運用にするか、今後の改修でスキップ機能を追加。
+
+カスタマイズ
+
+勤務時間帯: SHIFT_DEFAULT_START/SHIFT_DEFAULT_END を変更（既定 09:00-18:00）。
+
+希望休の色閾値: コード内の黄色判定を調整（RGBのしきい値）。
+
+BusyStatus運用: 希望休を Tentative(1) にする等、busy を変えれば社内ルールに合わせられる。
+
+配布物
+
+outlook-shift-scheduler.exe（PyInstaller成果物）
+
+README.txt（この文書）
+
+schedule_template.csv（CSVモードのサンプル・任意）
+
+このREADMEまで付ければ、だいたいの「それ前も言いましたよね？」を防げる。次に言われるのは「二重登録抑止つけて」で確定なので、やるなら「同日同時間・同Subjectはスキップ」フラグを設ける方向で。
